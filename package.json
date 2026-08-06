@@ -1,0 +1,40 @@
+{
+  "name": "pi-model-bench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Batch health and streaming performance benchmark for Pi Coding Agent",
+  "bin": {
+    "pi-model-bench": "./bin/pi-model-bench.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "index.ts",
+    "README.md",
+    "README_CN.md"
+  ],
+  "scripts": {
+    "check": "node --check ./bin/pi-model-bench.js"
+  },
+  "keywords": [
+    "pi",
+    "pi-package",
+    "pi-extension",
+    "benchmark",
+    "ttft",
+    "tokens-per-second"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
