@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildPiLaunch, encodeCommandArgument } from "../src/cli.js";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const packageRoot = resolve(dirname(scriptPath), "..");
@@ -15,43 +16,28 @@ function packageVersion() {
   return packageJson.version;
 }
 
-function encodeCommandArgument(value) {
-  if (value.length > 0 && /^[A-Za-z0-9_./:@%+,=-]+$/u.test(value)) return value;
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
-
 if (cliArgs.length === 1 && (cliArgs[0] === "--version" || cliArgs[0] === "-v")) {
   process.stdout.write(`${packageVersion()}\n`);
 } else {
-  const forwardedArgs = cliArgs.length > 0 ? cliArgs : ["--help"];
+  const forwardedArgs = cliArgs;
   const command = `/model-bench ${forwardedArgs.map(encodeCommandArgument).join(" ")}`;
   const piBinary = process.env.PI_MODEL_BENCH_PI_BIN?.trim()
     || (process.platform === "win32" ? "pi.cmd" : "pi");
-
-  const child = spawn(
-    piBinary,
-    [
-      "--no-extensions",
-      "--no-skills",
-      "--no-prompt-templates",
-      "--no-context-files",
-      "--no-tools",
-      "--extension",
-      extensionPath,
-      "--no-session",
-      "--print",
-      command,
-    ],
-    {
-      cwd: process.cwd(),
-      env: process.env,
-      shell: false,
-      stdio: "inherit",
-    },
-  );
-
+  const piArgs = [
+    "--no-extensions",
+    "--no-skills",
+    "--no-prompt-templates",
+    "--no-context-files",
+    "--no-tools",
+    "--extension",
+    extensionPath,
+    "--no-session",
+    "--print",
+    command,
+  ];
+  let child;
   let failedToStart = false;
-  child.once("error", (error) => {
+  const reportLaunchError = (error) => {
     failedToStart = true;
     const zh = forwardedArgs.includes("--zh")
       || forwardedArgs.some((arg, index) => arg === "--lang" && /^zh(?:-cn)?$/i.test(forwardedArgs[index + 1] ?? ""))
@@ -63,15 +49,34 @@ if (cliArgs.length === 1 && (cliArgs[0] === "--version" || cliArgs[0] === "-v"))
         : `[pi-model-bench] Could not start Pi. Install Pi and make sure the pi command is on PATH.\n${detail}\n`,
     );
     process.exitCode = 127;
-  });
+  };
 
-  child.once("close", (code, signal) => {
-    if (failedToStart) return;
-    if (typeof code === "number") {
-      process.exitCode = code;
-      return;
-    }
-    const signalExitCodes = { SIGHUP: 129, SIGINT: 130, SIGTERM: 143 };
-    process.exitCode = signalExitCodes[signal] ?? 1;
-  });
+  try {
+    const launch = buildPiLaunch(piBinary, piArgs);
+    child = spawn(
+      launch.command,
+      launch.args,
+      {
+        cwd: process.cwd(),
+        env: process.env,
+        shell: false,
+        stdio: "inherit",
+      },
+    );
+  } catch (error) {
+    reportLaunchError(error);
+  }
+
+  if (child) {
+    child.once("error", reportLaunchError);
+    child.once("close", (code, signal) => {
+      if (failedToStart) return;
+      if (typeof code === "number") {
+        process.exitCode = code;
+        return;
+      }
+      const signalExitCodes = { SIGHUP: 129, SIGINT: 130, SIGTERM: 143 };
+      process.exitCode = signalExitCodes[signal] ?? 1;
+    });
+  }
 }

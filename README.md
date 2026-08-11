@@ -2,6 +2,8 @@
 
 A Pi Coding Agent extension and CLI that reuse Pi's configured models and credentials to run serial API health checks and streaming benchmarks.
 
+中文说明：[README_CN.md](./README_CN.md)
+
 It never writes credentials to reports. Reports contain model/provider metadata, timing, usage, cost, and sanitized error summaries.
 
 ## MVP features
@@ -12,7 +14,7 @@ It never writes credentials to reports. Reports contain model/provider metadata,
 - Repeatable `--speed` checks with TTFT, visible TTFT, decode TPS, and E2E latency
 - Provider-reported output-token counts when available; clearly marked estimation fallback
 - Serial requests, disabled retries, disabled cache retention, and unique request IDs
-- Incremental Markdown, CSV, and JSON reports in Pi's current working directory
+- Optional incremental Markdown, CSV, and JSON reports with `-f`
 - Manual network labels such as `home-wifi`, `office-vpn`, or `mobile-5g`
 
 ## Requirements
@@ -36,7 +38,11 @@ npm link
 pi-model-bench --health --all --label home-wifi
 ```
 
-The CLI is a thin non-interactive wrapper around Pi. It starts the Pi runtime with only this extension, does not open the TUI or save a session, and leaves credential resolution to Pi. Running it without arguments shows help and sends no model requests.
+The CLI is a thin non-interactive wrapper around Pi. It starts the Pi runtime with only this extension, does not open the TUI or save a session, and leaves credential resolution to Pi. Running it without arguments runs the default speed benchmark against the current model and does not write report files.
+
+Short flags are available and can be combined: `-c` current, `-a` all, `-s` scoped, `-t` health, `-l` list, `-z` Chinese, and `-f` report files. For example, `pi-model-bench -lz` is equivalent to `pi-model-bench --list --zh`, while `pi-model-bench -zs` benchmarks Pi's scoped models with Chinese output.
+
+After a speed benchmark that selects multiple models, the CLI prints every model ranked by median successful Decode TPS in descending order. Failed models and models without a usable TPS value remain visible at the end.
 
 Set `PI_MODEL_BENCH_PI_BIN=/path/to/pi` if the Pi executable is not on the standard `PATH`.
 
@@ -52,7 +58,7 @@ Then restart Pi or run `/reload` and use:
 
 ```text
 /model-bench --health --all --label home-wifi
-/model-bench --speed --all --runs 3 --max-tokens 128 --label office-vpn
+/model-bench --speed --all --runs 3 --max-tokens 128 --label office-vpn -f
 /model-bench --models provider/model-a,provider/model-b --runs 3
 ```
 
@@ -80,6 +86,7 @@ The wrapper never reads credentials itself. The extension asks Pi's model regist
 - Multi-model or more-than-three-request runs require confirmation in the TUI. The shell CLI is already non-interactive and starts the selected requests immediately.
 - Requests run one at a time so models do not compete for the same connection or local bandwidth.
 - Thinking defaults to `off` on a best-effort basis. Some reasoning models/providers cannot fully disable it; the requested level is recorded in every result.
+- Reports are disabled by default. Use `-f` for default filenames or `--output NAME` for a custom basename.
 - Reports do not contain credentials or the absolute working-directory path.
 - Completion messages show relative report filenames rather than the absolute working directory.
 

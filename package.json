@@ -15,7 +15,7 @@
     "README_CN.md"
   ],
   "scripts": {
-    "check": "node --check ./bin/pi-model-bench.js"
+    "check": "node --check ./bin/pi-model-bench.js && node --check ./src/cli.js && node --test"
   },
   "keywords": [
     "pi",

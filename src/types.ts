@@ -19,6 +19,7 @@ export interface BenchmarkOptions {
   timeoutMs: number;
   delayMs: number;
   label: string;
+  writeFiles: boolean;
   outputBase?: string;
   thinking: RequestedThinking;
   prompt: string;

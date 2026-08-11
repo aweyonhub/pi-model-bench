@@ -6,6 +6,7 @@ import { basename } from "node:path";
 import { benchmarkModel, safeBaseUrl, sanitizeError } from "./src/benchmark";
 import { detectLanguage, helpText, parseOptions } from "./src/options";
 import { createReportPaths, writeReports } from "./src/report";
+import { durationBadge, rankModelTps, tpsBadge } from "./src/terminal.js";
 import type {
   AnyModel,
   BenchmarkOptions,
@@ -191,14 +192,10 @@ async function runCommand(args: string, ctx: ExtensionCommandContext): Promise<v
   }
 
   const data = environmentData(ctx, options, models);
-  const paths = createReportPaths(ctx.cwd, data.startedAt, options.outputBase, options.label);
-  await writeReports(paths, data);
-  announce(
-    ctx,
-    zh
-      ? `🚀 开始执行 ${totalRequests} 次请求。每次测试完成后都会保存增量报表。`
-      : `🚀 Starting ${totalRequests} request(s). Partial reports are saved after every run.`,
-  );
+  const paths = options.writeFiles
+    ? createReportPaths(ctx.cwd, data.startedAt, options.outputBase, options.label)
+    : null;
+  if (paths) await writeReports(paths, data);
 
   let completed = 0;
   try {
@@ -207,27 +204,10 @@ async function runCommand(args: string, ctx: ExtensionCommandContext): Promise<v
         completed += 1;
         const key = `${model.provider}/${model.id}`;
         ctx.ui.setStatus("model-bench", `[${completed}/${totalRequests}] ${key} run ${run}/${options.runs}`);
-        if (!ctx.hasUI) {
-          announce(
-            ctx,
-            zh
-              ? `⏳ [${completed}/${totalRequests}] ${key}：正在请求（第 ${run}/${options.runs} 次，超时 ${Math.round(options.timeoutMs / 1_000)} 秒）…`
-              : `⏳ [${completed}/${totalRequests}] ${key}: requesting (run ${run}/${options.runs}, timeout ${Math.round(options.timeoutMs / 1_000)}s)…`,
-          );
-        }
         const auth = await resolveAuth(ctx, model);
-        const result = await benchmarkModel(model, auth, options, run, (ttftMs) => {
-          if (!ctx.hasUI) {
-            announce(
-              ctx,
-              zh
-                ? `⚡ [${completed}/${totalRequests}] ${key}：已收到首 token（${ttftMs.toFixed(0)} ms），等待响应完成…`
-                : `⚡ [${completed}/${totalRequests}] ${key}: first token received (${ttftMs.toFixed(0)} ms), waiting for completion…`,
-            );
-          }
-        });
+        const result = await benchmarkModel(model, auth, options, run);
         data.results.push(result);
-        await writeReports(paths, data);
+        if (paths) await writeReports(paths, data);
 
         const metric = result.success
           ? (zh
@@ -236,7 +216,7 @@ async function runCommand(args: string, ctx: ExtensionCommandContext): Promise<v
           : `${errorCategoryLabel(result.errorCategory, zh)}: ${result.errorMessage || (zh ? "请求失败" : "request failed")}`;
         announce(
           ctx,
-          `${result.success ? "✅" : "❌"} [${completed}/${totalRequests}] ${key}: ${result.success ? (zh ? "成功" : "OK") : (zh ? "失败" : "FAIL")} — ${metric}`,
+          `${result.success ? "✅" : "❌"}[${durationBadge(result.ttftMs ?? result.e2eMs)}][${tpsBadge(result.decodeTps)}][${completed}/${totalRequests}] ${key}: ${result.success ? (zh ? "成功" : "OK") : (zh ? "失败" : "FAIL")} — ${metric}`,
           result.success ? "info" : "warning",
         );
 
@@ -244,25 +224,35 @@ async function runCommand(args: string, ctx: ExtensionCommandContext): Promise<v
       }
     }
     data.completedAt = new Date().toISOString();
-    await writeReports(paths, data);
+    if (paths) await writeReports(paths, data);
   } finally {
     ctx.ui.setStatus("model-bench", undefined);
   }
 
   const successes = data.results.filter((item) => item.success).length;
-  const displayPaths = {
-    markdown: basename(paths.markdown),
-    csv: basename(paths.csv),
-    json: basename(paths.json),
-  };
   const completionIcon = successes === data.results.length ? "✅" : successes > 0 ? "⚠️" : "❌";
-  announce(
-    ctx,
-    zh
-      ? `${completionIcon} 测试完成：${successes}/${data.results.length} 次成功。\n中文 Markdown：${displayPaths.markdown}\nCSV：${displayPaths.csv}\nJSON：${displayPaths.json}`
-      : `${completionIcon} Finished: ${successes}/${data.results.length} successful.\nMarkdown: ${displayPaths.markdown}\nCSV: ${displayPaths.csv}\nJSON: ${displayPaths.json}`,
-    successes === data.results.length ? "info" : "warning",
-  );
+  if (totalRequests > 1 || paths) {
+    const files = paths
+      ? [basename(paths.markdown), basename(paths.csv), basename(paths.json)].join(", ")
+      : null;
+    announce(
+      ctx,
+      zh
+        ? `${completionIcon} 测试完成：${successes}/${data.results.length} 次成功${files ? `；报表：${files}` : ""}。`
+        : `${completionIcon} Finished: ${successes}/${data.results.length} successful${files ? `; reports: ${files}` : ""}.`,
+      successes === data.results.length ? "info" : "warning",
+    );
+  }
+  if (models.length > 1 && options.mode === "speed") {
+    const rankings = rankModelTps(data.results);
+    rankings.forEach((ranking, index) => {
+      announce(
+        ctx,
+        `📊[${index + 1}/${rankings.length}][${tpsBadge(ranking.tps)}][${ranking.successful}/${ranking.total}] ${ranking.key}`,
+        ranking.successful > 0 ? "info" : "warning",
+      );
+    });
+  }
   if (!ctx.hasUI && successes !== data.results.length) process.exitCode = 1;
 }
 

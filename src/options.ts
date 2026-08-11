@@ -5,6 +5,7 @@ import type {
   OutputLanguage,
   RequestedThinking,
 } from "./types";
+import { expandShortFlags, hasChineseShortFlag } from "./short-options.js";
 
 export const DEFAULT_SPEED_PROMPT =
   "Repeat this eight-word pattern continuously until the response is stopped: alpha bravo charlie delta echo foxtrot golf hotel. Output only those words separated by single spaces. Do not explain, count, or stop early.";
@@ -25,6 +26,9 @@ const THINKING_LEVELS = new Set<RequestedThinking>([
 export const HELP_TEXT_EN = `pi-model-bench
 
 Usage:
+  pi-model-bench
+  pi-model-bench -lz
+  pi-model-bench -zs
   pi-model-bench --health --all --label home-wifi
   pi-model-bench --speed --all --runs 3 --max-tokens 128 --label office-vpn
 
@@ -34,14 +38,14 @@ Inside Pi:
   /model-bench --models provider/model-a,provider/model-b --runs 3
 
 Model selection (choose one; default: current):
-  --current                 Test the active model
-  --all                     Test every available configured model
-  --scoped                  Test models selected by Pi --models/enabledModels
+  -c, --current             Test the active model
+  -a, --all                 Test every available configured model
+  -s, --scoped              Test models selected by Pi --models/enabledModels
   --provider NAME           Test every available model from one provider
   --models LIST             Comma-separated model IDs or provider/model patterns
 
 Test options:
-  --health                  One short access/health request per model
+  -t, --health              One short access/health request per model
   --speed                   Streaming benchmark (default)
   --runs N                  Runs per model (health: 1, speed: 3)
   --max-tokens N            Output cap (health: 8, speed: 128)
@@ -49,17 +53,21 @@ Test options:
   --delay DURATION          Delay between requests (default: 250ms)
   --thinking LEVEL          off|minimal|low|medium|high|xhigh|max
   --label TEXT              Network label stored in reports
-  --output NAME             Report basename; files stay in the current directory
+  -f, --file                Write Markdown, CSV, and JSON reports (off by default)
+  --output NAME             Write reports with a custom basename
   --prompt TEXT             Override the fixed benchmark prompt
   --lang LANGUAGE           Report language: en|zh (default: en)
-  --zh                      Shortcut for --lang zh
+  -z, --zh                  Shortcut for --lang zh; short flags can combine, e.g. -zs
   --yes                     Skip the multi-model confirmation
-  --list                    List available configured models without calling them
+  -l, --list                List available configured models without calling them
   --help                    Show this help`;
 
 export const HELP_TEXT_ZH = `pi-model-bench
 
 命令行用法：
+  pi-model-bench
+  pi-model-bench -lz
+  pi-model-bench -zs
   pi-model-bench --health --all --label home-wifi --lang zh
   pi-model-bench --speed --all --runs 3 --max-tokens 128 --label office-vpn --lang zh
 
@@ -69,14 +77,14 @@ export const HELP_TEXT_ZH = `pi-model-bench
   /model-bench --models provider/model-a,provider/model-b --runs 3 --lang zh
 
 模型选择（只能选择一种；默认：当前模型）：
-  --current                 测试当前正在使用的模型
-  --all                     测试所有已配置且可用的模型
-  --scoped                  测试 Pi --models/enabledModels 限定的模型
+  -c, --current             测试当前正在使用的模型
+  -a, --all                 测试所有已配置且可用的模型
+  -s, --scoped              测试 Pi --models/enabledModels 限定的模型
   --provider NAME           测试指定 provider 下的全部可用模型
   --models LIST             逗号分隔的模型 ID 或 provider/model 通配模式
 
 测试参数：
-  --health                  每个模型执行一次低消耗健康检查
+  -t, --health              每个模型执行一次低消耗健康检查
   --speed                   流式速度测试（默认）
   --runs N                  每个模型运行次数（健康检查：1，速度测试：3）
   --max-tokens N            最大输出 token（健康检查：8，速度测试：128）
@@ -84,12 +92,13 @@ export const HELP_TEXT_ZH = `pi-model-bench
   --delay DURATION          请求间隔（默认：250ms）
   --thinking LEVEL          off|minimal|low|medium|high|xhigh|max
   --label TEXT              写入报表的网络环境标签
-  --output NAME             报表文件名；文件始终保存在当前目录
+  -f, --file                输出 Markdown、CSV、JSON 报表（默认不输出）
+  --output NAME             使用自定义文件名前缀输出报表
   --prompt TEXT             覆盖内置的固定测试提示词
   --lang LANGUAGE           输出语言：en|zh（默认：en）
-  --zh                      --lang zh 的快捷写法
+  -z, --zh                  --lang zh 的快捷写法；短参数可组合，如 -zs
   --yes                     跳过多模型测试确认
-  --list                    只列出可用模型，不发送模型请求
+  -l, --list                只列出可用模型，不发送模型请求
   --help                    显示帮助`;
 
 export function helpText(language: OutputLanguage): string {
@@ -99,6 +108,7 @@ export function helpText(language: OutputLanguage): string {
 export function detectLanguage(input: string): OutputLanguage {
   return /(?:^|\s)--zh(?:\s|$)/.test(input)
     || /(?:^|\s)--lang(?:=|\s+)(?:zh|zh-cn)(?:\s|$)/i.test(input)
+    || hasChineseShortFlag(input)
     ? "zh"
     : "en";
 }
@@ -169,7 +179,7 @@ function requireValue(tokens: string[], index: number, name: string): string {
 }
 
 export function parseOptions(input: string): BenchmarkOptions {
-  const tokens = tokenize(input);
+  const tokens = expandShortFlags(tokenize(input));
   let mode: BenchmarkMode = "speed";
   let modeWasSet = false;
   let selector: ModelSelector = { kind: "current" };
@@ -179,6 +189,7 @@ export function parseOptions(input: string): BenchmarkOptions {
   let timeoutMs: number | undefined;
   let delayMs = 250;
   let label = "unlabeled";
+  let writeFiles = false;
   let outputBase: string | undefined;
   let thinking: RequestedThinking = "off";
   let prompt: string | undefined;
@@ -214,6 +225,7 @@ export function parseOptions(input: string): BenchmarkOptions {
 
     switch (arg) {
       case "--health":
+      case "--heath":
         setMode("health");
         break;
       case "--speed":
@@ -266,8 +278,12 @@ export function parseOptions(input: string): BenchmarkOptions {
       case "--label":
         label = valueFor("--label").trim().slice(0, 80) || "unlabeled";
         break;
+      case "--file":
+        writeFiles = true;
+        break;
       case "--output":
         outputBase = valueFor("--output");
+        writeFiles = true;
         break;
       case "--prompt":
         prompt = valueFor("--prompt");
@@ -311,6 +327,7 @@ export function parseOptions(input: string): BenchmarkOptions {
     timeoutMs: timeoutMs ?? 30_000,
     delayMs,
     label,
+    writeFiles,
     outputBase,
     thinking,
     prompt: prompt ?? (mode === "health" ? DEFAULT_HEALTH_PROMPT : DEFAULT_SPEED_PROMPT),
