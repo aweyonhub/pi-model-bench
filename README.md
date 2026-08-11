@@ -1,6 +1,6 @@
 # pi-model-bench
 
-A Pi Coding Agent extension and CLI that reuse Pi's configured models and credentials to run serial API health checks and streaming benchmarks.
+`pi-model-bench` is a model health and performance benchmarking tool that depends on and reuses the providers, model catalog, and credentials already configured in Pi Coding Agent. It supports both a standalone CLI and a Pi extension.
 
 中文说明：[README_CN.md](./README_CN.md)
 
